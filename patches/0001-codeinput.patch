@@ -1,0 +1,17 @@
+diff --git a/docs/app.js b/docs/app.js
+index a7d9982..8cda3db 100644
+--- a/docs/app.js
++++ b/docs/app.js
+@@ -382,9 +382,9 @@
+     if (f.step === 'scan' && !f.manual) {
+       var vid = document.getElementById('vid');
+       scanStart(vid, function (raw) { var code = parseCard(raw); if (code) { scanStop(); recibirCodigo(code); } })
+-        .catch(function () { f.manual = true; f.err = 'No hay acceso a la cámara. Escribe el número de la tarjeta.'; renderV(); });
+-      var inp = document.getElementById('codeInput'); if (inp) inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') act('f:code'); });
+-    } else scanStop();
++        .catch(function () { if (V.flow !== f || f.step !== 'scan') return; var ci = document.getElementById('codeInput'); if (ci) f.code = ci.value; f.manual = true; f.err = 'No hay acceso a la cámara. Escribe el número de la tarjeta.'; renderV(); });
++      var inp = document.getElementById('codeInput'); if (inp) { inp.addEventListener('input', function () { f.code = inp.value; }); inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') act('f:code'); }); }
++    } else { scanStop(); var inp2 = document.getElementById('codeInput'); if (inp2) { inp2.addEventListener('input', function () { f.code = inp2.value; }); inp2.addEventListener('keydown', function (e) { if (e.key === 'Enter') act('f:code'); }); } }
+     if (f.step === 'fotos') {
+       app.querySelectorAll('input[data-foto]').forEach(function (inp) {
+         inp.addEventListener('change', function () {
