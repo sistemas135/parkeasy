@@ -1,0 +1,9 @@
+{
+  "name": "ParkEasy Valet",
+  "short_name": "ParkEasy",
+  "start_url": "./#/valet",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#04387C",
+  "icons": [{ "src": "logo.png", "sizes": "96x96", "type": "image/png" }]
+}
