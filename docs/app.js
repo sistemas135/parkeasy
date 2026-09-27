@@ -159,6 +159,24 @@
       renderC();
     }).catch(function (e) { if (!C.data) { C.data = { error: 'RED' }; renderC(); } });
   }
+  function tarifarioHtml(t) {
+    if (!t || !t.tramos) return '';
+    var rows = '', prev = 0;
+    t.tramos.forEach(function (tr) { var h = tr.hasta_min / 60; rows += '<div class="kv"><span class="k">' + (prev ? 'De ' + prev + ' a ' + h : 'Hasta ' + h) + ' horas</span><b>' + money(tr.precio) + '</b></div>'; prev = h; });
+    if (t.por_24h_adicional) rows += '<div class="kv"><span class="k">Cada 24 horas adicionales</span><b>+' + money(t.por_24h_adicional) + '</b></div>';
+    return '<div class="card sm" style="gap:8px"><div class="label">Tarifario · por tiempo</div>' + rows + '<div class="small" style="text-align:left">El tiempo cuenta desde que recibimos tu carro hasta que lo pides' + (t.gracia_min ? ' · ' + t.gracia_min + ' min de tolerancia en cada corte' : '') + (t.itbms_incluido ? ' · ITBMS incluido' : '') + (t.tarjeta_perdida ? ' · tarjeta perdida ' + money(t.tarjeta_perdida) : '') + '.</div></div>';
+  }
+  function precioVivo(v) {
+    var c = v.cotizacion || {};
+    if (v.tipo === 'mensual') {
+      if (Number(c.precio) > 0) return '<div class="note warn" style="text-align:left;justify-content:space-between"><span>Fuera del horario del contrato' + (c.horario_hasta ? ' (desde ' + String(c.horario_hasta).slice(0, 5) + ')' : '') + '</span><b>' + money(c.precio) + '</b></div>';
+      return '<div class="note ok">Contrato · sin cargo</div>';
+    }
+    var h = '<div class="card sm" style="gap:6px"><div class="row-between"><span style="font-size:14px;color:var(--muted)">Tarifa actual · ' + Math.floor((c.minutos || 0) / 60) + ' h ' + pad2((c.minutos || 0) % 60) + ' min</span><b style="font-size:20px;font-weight:800">' + money(c.precio) + '</b></div>';
+    if (c.sube_en && c.sube_a != null) h += '<div class="small" style="text-align:left">Sube a ' + money(c.sube_a) + ' a las ' + esc(hora(c.sube_en)) + '</div>';
+    if (v.extra > 0) h += '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(v.extra) + '</b></div>';
+    return h + '<button class="back" style="padding:4px 0" data-a="c:tarifario">Ver tarifario completo</button></div>';
+  }
   function clienteScreen() {
     var d = C.data; if (!d) return 'loading';
     if (d.error) return 'error';
@@ -180,6 +198,7 @@
     } else if (s === 'libre') {
       h += '<div class="screen"><h1>Tarjeta lista</h1><p>Esta tarjeta no tiene ningún carro asignado en este momento. Entrégasela al valet al llegar y él la activará con tu carro.</p>'
         + '<div class="card sm"><div class="label">Cómo funciona</div><div class="list"><div class="li"><span class="num">1</span>Entrega tu carro y recibe esta tarjeta</div><div class="li"><span class="num">2</span>Escanea el QR cuando quieras tu carro</div><div class="li"><span class="num">3</span>Paga en el celular y lo llevamos a la puerta</div></div></div>'
+        + (d.tipo_tarjeta === 'contrato' ? '' : tarifarioHtml(d.tarifario))
         + '<div class="grow"></div><div class="small">' + esc((d.sitio && d.sitio.nombre) || '') + '</div></div>';
     } else if (s === 'ticket') {
       var n = (v.fotos || []).length;
@@ -188,22 +207,24 @@
         + (n ? '<div><div class="label" style="margin-bottom:8px">Fotos al recibir · ' + n + '</div><div class="thumbs">' + v.fotos.slice(0, 4).map(function (u) { return '<a class="thumb" href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="foto"></a>'; }).join('') + '</div></div>' : '')
         + '<div class="row-between"><div><div style="font-size:17px;font-weight:800">' + esc(carro(v)) + '</div><div style="font-size:13px;color:var(--muted);margin-top:4px">Recibido ' + esc(hora(v.recibido_en)) + (v.runner_recibe ? ' · por ' + esc(v.runner_recibe) : '') + '</div></div>' + (v.placa ? '<span class="plate">' + esc(v.placa) + '</span>' : '') + '</div>'
         + '</div>'
-        + (v.tipo === 'mensual' ? '<div class="note ok">Cliente mensual · sin cargo</div>' : '<div class="row-between" style="padding:0 4px"><span style="font-size:14px;color:var(--muted)">Tarifa valet' + (v.overnight > 0 ? ' + overnight' : '') + '</span><b style="font-size:16px;font-weight:800">' + money(Number(v.tarifa) + Number(v.overnight) + Number(v.extra)) + '</b></div>')
+        + precioVivo(v)
         + '<div class="grow"></div><div class="small">Conserva tu tarjeta con QR: la pediremos al entregarte el carro.</div>'
         + '<button class="btn" data-a="c:pedir">Pedir mi carro</button></div>';
     } else if (s === 'pedir') {
       var opts = [['ahora', 'Ahora mismo', 'Ya voy saliendo'], ['5', 'En 5 minutos', 'Estoy pidiendo la cuenta'], ['10', 'En 10 minutos', 'Termino y salgo']];
       h += '<div class="screen"><button class="back" data-a="c:ticket">' + I.back + 'Volver</button><h1>¿Cuándo lo quieres?</h1><p>Lo tendremos en la puerta a tiempo. Traer tu carro toma unos minutos.</p><div style="display:flex;flex-direction:column;gap:10px">';
       opts.forEach(function (o) { var on = o[0] === C.when; h += '<button class="opt' + (on ? ' on' : '') + '" data-a="c:when" data-v="' + o[0] + '"><span><span class="t">' + o[1] + '</span><span class="s">' + o[2] + '</span></span>' + (on ? I.check('#0A0A0A', 22) : '') + '</button>'; });
-      h += '</div><div class="grow"></div><button class="btn" data-a="c:pago">Continuar</button></div>';
+      var sinCargo = v.tipo === 'mensual' && !(Number((v.cotizacion || {}).precio) > 0) && !(v.extra > 0);
+      h += '</div><div class="grow"></div>' + (sinCargo ? '<div class="note ok">Contrato · sin cargo</div><button class="btn" data-a="c:pay"' + (C.sending ? ' disabled' : '') + '>Pedir mi carro</button>' : '<button class="btn" data-a="c:pago">Continuar</button>') + '</div>';
     } else if (s === 'pago') {
-      var base = Number(v.tarifa) + Number(v.overnight) + Number(v.extra), total = base + C.tip, mensual = v.tipo !== 'abierto';
+      var cot = v.cotizacion || {}, base = Number(cot.precio != null ? cot.precio : v.tarifa) + Number(v.extra), total = base + C.tip, mensual = v.tipo !== 'abierto';
       h += '<div class="screen"><button class="back" data-a="c:pedir">' + I.back + 'Volver</button><h1>' + (mensual ? 'Propina' : 'Pago') + '</h1>'
-        + '<div class="card sm">' + (mensual ? '<div class="kv"><span class="k">Servicio</span><b>Mensual · $0.00</b></div>' : '<div class="kv"><span class="k">Tarifa valet</span><b>' + money(v.tarifa) + '</b></div>' + (v.overnight > 0 ? '<div class="kv"><span class="k">Overnight</span><b>' + money(v.overnight) + '</b></div>' : '') + (v.extra > 0 ? '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(v.extra) + '</b></div>' : ''))
+        + '<div class="card sm">' + (mensual ? (Number(cot.precio) > 0 ? '<div class="kv"><span class="k">Fuera del horario del contrato · ' + Math.floor((cot.fuera_horario_min || 0) / 60) + ' h ' + pad2((cot.fuera_horario_min || 0) % 60) + ' min</span><b>' + money(cot.precio) + '</b></div>' : '<div class="kv"><span class="k">Servicio</span><b>Contrato · $0.00</b></div>') : '<div class="kv"><span class="k">Tarifa valet · ' + Math.floor((cot.minutos || 0) / 60) + ' h ' + pad2((cot.minutos || 0) % 60) + ' min</span><b>' + money(cot.precio != null ? cot.precio : v.tarifa) + '</b></div>') + (v.extra > 0 ? '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(v.extra) + '</b></div>' : '')
         + '<div class="kv"><span class="k">Propina para el equipo</span><b>' + money(C.tip) + '</b></div><div class="line"></div><div class="kv" style="font-size:17px"><b style="font-weight:800">Total</b><b style="font-weight:800">' + money(total) + '</b></div></div>'
         + '<div><div class="label" style="margin-bottom:8px">Propina · opcional</div><div class="chips">';
       [[0, 'Sin propina'], [1, '$1'], [2, '$2'], [3, '$3'], [5, '$5']].forEach(function (t) { h += '<button class="chip' + (t[0] === C.tip ? ' on' : '') + '" data-a="c:tip" data-v="' + t[0] + '">' + t[1] + '</button>'; });
       h += '</div></div>';
+      if (base > 0 && !mensual) h += '<div class="small">El precio queda fijo al pedir tu carro.</div>';
       if (total > 0) {
         h += '<div><div class="label" style="margin-bottom:8px">Método de pago</div><div style="display:flex;flex-direction:column;gap:8px">';
         [['yappy', 'Yappy', 'Lo confirmamos en el stand'], ['tarjeta', 'Tarjeta', 'Datáfono en el stand'], ['efectivo', 'Efectivo', 'Pagas al recibir el carro']].forEach(function (m) { var on = m[0] === C.method; h += '<button class="opt' + (on ? ' on' : '') + '" style="padding:13px 16px;border-radius:14px" data-a="c:method" data-v="' + m[0] + '"><span><span class="t" style="font-size:16px">' + m[1] + '</span><span class="s" style="font-size:12px">' + m[2] + '</span></span>' + (on ? I.check('#0A0A0A', 22) : '') + '</button>'; });
@@ -227,14 +248,14 @@
       h += '<div class="screen" style="gap:18px"><h1 style="font-size:30px">¡Buen viaje!</h1><p>¿Cómo estuvo el servicio?</p><div class="stars">';
       for (var k = 1; k <= 5; k++) h += '<button class="star" data-a="c:star" data-v="' + k + '" aria-label="' + k + ' estrellas">' + I.star(k <= (C.rating || u.calificacion || 0) ? '#0A0A0A' : '#D1D1D6') + '</button>';
       h += '</div><div class="card sm" style="gap:10px"><div class="row-between"><span class="label">Recibo</span><span style="font-size:12px;color:var(--muted)">' + esc(fecha(u.entregado_en)) + ' · ' + esc(hora(u.entregado_en)) + '</span></div><div style="font-size:14px;color:var(--muted)">' + esc(CFG.APP_NAME) + ' · Tarjeta ' + esc(d.tarjeta) + (u.placa ? ' · ' + esc(u.placa) : '') + '</div>'
-        + (u.tipo === 'mensual' ? '<div class="kv"><span class="k">Servicio</span><b>Mensual</b></div>' : '<div class="kv"><span class="k">Tarifa valet</span><b>' + money(u.tarifa) + '</b></div>') + (u.overnight > 0 ? '<div class="kv"><span class="k">Overnight</span><b>' + money(u.overnight) + '</b></div>' : '') + (u.extra > 0 ? '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(u.extra) + '</b></div>' : '') + '<div class="kv"><span class="k">Propina</span><b>' + money(u.propina) + '</b></div><div class="line"></div><div class="kv" style="font-size:16px"><b style="font-weight:800">Total · ' + esc(metodoNombre[u.pago_metodo] || '') + '</b><b style="font-weight:800">' + money(u.total) + '</b></div></div>'
+        + (u.tipo === 'mensual' ? '<div class="kv"><span class="k">Contrato' + (u.tarifa > 0 ? ' · fuera de horario' : '') + '</span><b>' + money(u.tarifa) + '</b></div>' : '<div class="kv"><span class="k">Tarifa valet · ' + Math.floor((u.minutos || 0) / 60) + ' h ' + pad2((u.minutos || 0) % 60) + ' min</span><b>' + money(u.tarifa) + '</b></div>') + (u.extra > 0 ? '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(u.extra) + '</b></div>' : '') + '<div class="kv"><span class="k">Propina</span><b>' + money(u.propina) + '</b></div><div class="line"></div><div class="kv" style="font-size:16px"><b style="font-weight:800">Total · ' + esc(metodoNombre[u.pago_metodo] || '') + '</b><b style="font-weight:800">' + money(u.total) + '</b></div></div>'
         + '<div class="grow"></div><div class="small">Gracias por usar ' + esc(CFG.APP_NAME) + '.</div></div>';
     }
     app.innerHTML = '<div class="phone">' + h + '</div>';
   }
   function pagoRow(v) {
     var txt;
-    if (v.tipo === 'mensual') txt = 'Cliente mensual' + (v.propina > 0 ? ' · propina ' + money(v.propina) : '');
+    if (v.tipo === 'mensual' && !(Number(v.total) > 0)) txt = 'Contrato · sin cargo';
     else if (v.pago_estado === 'pagado') txt = 'Pagado con ' + (metodoNombre[v.pago_metodo] || '') + ' · ' + money(v.total);
     else if (v.pago_metodo === 'efectivo') txt = 'Pagas ' + money(v.total) + ' en efectivo al recibir el carro';
     else if (v.pago_metodo === 'yappy') txt = 'Yappy · ' + money(v.total) + ' · muestra tu comprobante en el stand';
@@ -250,9 +271,12 @@
       case 'c:when': C.when = v; break;
       case 'c:tip': C.tip = Number(v); break;
       case 'c:method': C.method = v; break;
+      case 'c:tarifario': { var t = (C.data && C.data.tarifario) || null; document.body.insertAdjacentHTML('beforeend', '<div class="overlay" data-a="c:cerrarSheet"><div class="sheet"><div class="handle"></div>' + tarifarioHtml(t) + '<button class="btn2 md" data-a="c:cerrarSheet">Cerrar</button></div></div>'); return; }
+      case 'c:cerrarSheet': { var o = document.querySelector('.overlay'); if (o) o.remove(); return; }
       case 'c:pay':
         if (C.sending) return; C.sending = true; renderC();
-        rpc('cliente_pedir', { p_token: C.token, p_cuando: C.when, p_propina: C.tip, p_metodo: C.method }).then(function (r) {
+        var vis = C.data && C.data.visita, gratis = vis && vis.tipo === 'mensual' && !(Number((vis.cotizacion || {}).precio) > 0) && !(vis.extra > 0) && C.screen !== 'pago';
+        rpc('cliente_pedir', { p_token: C.token, p_cuando: C.when, p_propina: gratis ? 0 : C.tip, p_metodo: gratis ? null : C.method }).then(function (r) {
           C.sending = false; C.screen = 'auto';
           if (!r.ok) { toast(r.error === 'YA_SOLICITADO' ? 'Ya habías pedido tu carro' : 'No se pudo enviar', true); }
           clienteLoad();
@@ -303,7 +327,7 @@
       if (!cola.length) h += '<div class="empty">No hay carros solicitados.<br>Cuando un cliente pida su carro aparece aquí.</div>';
       cola.forEach(function (v) {
         var s = secsSince(v.solicitado_en), late = v.estado === 'solicitado' && s > 240;
-        var pago = v.pago_estado === 'pagado' ? '<span class="tag ok">Pagado' + (v.pago_metodo ? ' · ' + metodoNombre[v.pago_metodo] : '') + '</span>' : (v.pago_metodo === 'efectivo' ? '<span class="tag warn">Cobrar ' + money(v.total) + ' efectivo</span>' : '<span class="tag bad">Pago ' + (metodoNombre[v.pago_metodo] || '') + ' por confirmar</span>');
+        var pago = v.pago_estado === 'pagado' ? '<span class="tag ok">' + (v.tipo === 'mensual' && !(Number(v.total) > 0) ? 'Contrato · sin cargo' : 'Pagado' + (v.pago_metodo ? ' · ' + metodoNombre[v.pago_metodo] : '')) + '</span>' : (v.pago_metodo === 'efectivo' ? '<span class="tag warn">Cobrar ' + money(v.total) + ' efectivo</span>' : '<span class="tag bad">Pago ' + (metodoNombre[v.pago_metodo] || '') + ' por confirmar</span>');
         var est = v.estado === 'en_puerta' ? '<span class="tag dark">En la puerta</span>' : (v.estado === 'en_camino' ? '<span class="tag blue">En camino' + (v.runner_entrega ? ' · ' + esc(v.runner_entrega) : '') + '</span>' : '<span class="tag">' + (v.cuando === 'ahora' || !v.cuando ? 'Ahora' : 'En ' + v.cuando + ' min') + '</span>');
         var btn = v.estado === 'solicitado' ? '<button class="take" data-a="v:tomar" data-v="' + v.id + '">Tomar</button>' : (v.estado === 'en_camino' ? '<button class="take" data-a="v:puerta" data-v="' + v.id + '">En la puerta</button>' : '<button class="take" data-a="v:entregar" data-v="' + v.id + '">Entregar</button>');
         h += '<div class="req' + (late ? ' alert' : '') + '" data-a="v:ver" data-v="' + v.id + '"><div class="info"><div class="row-between"><span class="code">' + esc(v.tarjeta) + ' · <span style="font-weight:700">' + esc(ubic(v)) + '</span></span><span class="timer' + (late ? ' late' : '') + '">' + mmss(s) + '</span></div><div class="sub">' + esc(carro(v)) + (v.placa ? ' · ' + esc(v.placa) : '') + '</div><div class="tags">' + est + pago + '</div></div>' + btn + '</div>';
@@ -361,7 +385,7 @@
       }
       h += (f.err ? '<div class="err">' + esc(f.err) + '</div>' : '') + '<div class="grow"></div><button class="btn" data-a="f:datosOk"' + (m && f.placa.trim() && lvl !== 'X' && !V.busy ? '' : ' disabled') + '>Guardar y estacionar</button></div>';
     } else if (f.step === 'estacionar') {
-      h += '<div class="screen">' + barra + '<div class="hero-dark grow"><div class="k">TARJETA ' + esc(f.v.tarjeta) + (f.mensual ? ' · MENSUAL' : '') + '</div><div class="t">Ve y estaciona<br>en nivel ' + esc(f.nivel) + '</div><div class="s">' + esc(f.v.modelo || '') + (f.v.placa ? ' · ' + esc(f.v.placa) : '') + '<br>Plaza sugerida: <b style="color:#fff">' + (f.sug ? pad2(f.sug) + '-' + f.nivel : 'la que esté libre') + '</b></div></div>'
+      h += '<div class="screen">' + barra + '<div class="hero-dark grow"><div class="k">TARJETA ' + esc(f.v.tarjeta) + (f.mensual ? ' · CONTRATO' : '') + '</div><div class="t">Ve y estaciona<br>en nivel ' + esc(f.nivel) + '</div><div class="s">' + esc(f.v.modelo || '') + (f.v.placa ? ' · ' + esc(f.v.placa) : '') + '<br>Plaza sugerida: <b style="color:#fff">' + (f.sug ? pad2(f.sug) + '-' + f.nivel : 'la que esté libre') + '</b></div></div>'
         + '<button class="btn" data-a="f:estacionado">Ya lo estacioné</button></div>';
     } else if (f.step === 'ubicar') {
       var plaza = f.plaza || f.sug || 1, niv = f.niv || f.nivel || 'A';
@@ -423,7 +447,10 @@
         }
         f.err = r.error === 'TARJETA_NO_EXISTE' ? 'Esa tarjeta no existe.' : 'No se pudo activar la tarjeta.'; f.manual = true; renderV(); return;
       }
-      f.v = r.visita; f.step = 'fotos'; renderV();
+      f.v = r.visita; f.step = 'fotos'; f.contrato = r.contrato || null; if (r.visita.placa) f.placa = r.visita.placa;
+      if (r.aviso === 'CONTRATO_SUSPENDIDO') toast('Contrato SUSPENDIDO · cobrar tarifa normal', true);
+      else if (r.contrato) toast('Contrato: ' + r.contrato.nombre + ' · sin cargo');
+      renderV();
     }).catch(function () { f.err = 'Sin conexión.'; f.manual = true; renderV(); });
   }
   function abrirVisita(v) {
@@ -439,7 +466,7 @@
     var pagado = v.pago_estado === 'pagado';
     h += '<div class="screen"><div class="row-between"><h1 class="sm">Tarjeta ' + esc(v.tarjeta) + '</h1><span class="pill blue">' + esc(ubic(v)) + '</span></div>'
       + '<div class="card sm"><div class="row-between"><div><div style="font-size:16px;font-weight:800">' + esc(carro(v)) + '</div><div style="font-size:13px;color:var(--muted)">' + esc(estadoNombre[v.estado] || v.estado) + (v.solicitado_en ? ' · pedido ' + hora(v.solicitado_en) : '') + '</div></div>' + (v.placa ? '<span class="plate">' + esc(v.placa) + '</span>' : '') + '</div></div>';
-    if (v.tipo === 'mensual' && pagado) h += '<div class="paybox ok">' + I.check('#fff', 18) + '<div class="txt"><b>Cliente mensual</b><span>' + (v.propina > 0 ? 'Propina ' + money(v.propina) + ' registrada' : 'Sin cargo') + '</span></div></div>';
+    if (v.tipo === 'mensual' && pagado && !(Number(v.total) > 0)) h += '<div class="paybox ok">' + I.check('#fff', 18) + '<div class="txt"><b>Contrato</b><span>Sin cargo</span></div></div>';
     else if (pagado) h += '<div class="paybox ok">' + I.check('#fff', 18) + '<div class="txt"><b>Pagado · ' + esc(metodoNombre[v.pago_metodo] || '') + '</b><span>' + money(v.total) + (v.propina > 0 ? ' · incluye propina ' + money(v.propina) : '') + '</span></div></div>';
     else if (v.pago_metodo === 'efectivo') h += '<div class="paybox cash"><div class="txt"><b>Cobrar en efectivo</b><span>Total ' + money(v.total) + (v.propina > 0 ? ' (propina ' + money(v.propina) + ')' : '') + '</span></div><button class="mini" data-a="e:cobrar"' + (V.busy ? ' disabled' : '') + '>Recibí ' + money(v.total) + '</button></div>';
     else h += '<div class="paybox pend"><div class="txt"><b>' + esc(metodoNombre[v.pago_metodo] || 'Pago') + ' por confirmar · ' + money(v.total) + '</b><span>El capitán lo confirma en el tablero al ver el comprobante.</span></div><button class="mini bad" data-a="e:efectivo">Cambiar a efectivo</button></div>';
@@ -504,7 +531,7 @@
       case 'f:datosOk':
         V.busy = true; f.err = ''; renderV();
         rpc('runner_datos', { p_sess: V.sess.token, p_visita: f.v.id, p_placa: f.placa.trim(), p_modelo: f.modelo.nombre, p_peso: f.categoria ? null : f.modelo.peso_lb, p_categoria: f.categoria || null, p_color: f.color || null })
-          .then(function (r) { V.busy = false; if (!r.ok) { f.err = 'No se pudo guardar.'; renderV(); return; } f.v = r.visita; f.nivel = r.nivel; f.sug = r.plaza_sugerida; f.mensual = r.mensual; if (r.mensual) toast('Cliente mensual: ' + r.mensual_nombre); f.step = 'estacionar'; renderV(); })
+          .then(function (r) { V.busy = false; if (!r.ok) { f.err = 'No se pudo guardar.'; renderV(); return; } f.v = r.visita; f.nivel = r.nivel; f.sug = r.plaza_sugerida; f.mensual = r.mensual; f.step = 'estacionar'; renderV(); })
           .catch(function () { V.busy = false; f.err = 'Sin conexión.'; renderV(); });
         return;
       case 'f:estacionado': f.step = 'ubicar'; f.plaza = f.sug; f.niv = f.nivel; renderV(); return;
@@ -550,8 +577,9 @@
   function pinScreenFor(title) { V._title = title; V.pin = ''; V.pinErr = false; app.innerHTML = '<div class="phone">' + pinScreen(title) + '</div>'; }
   window.PE.pinScreen = pinScreenFor;
 
-  app.addEventListener('click', function (ev) {
+  document.addEventListener('click', function (ev) {
     var el = ev.target.closest('[data-a]'); if (!el || el.disabled) return;
+    if (el.classList.contains('overlay') && ev.target !== el) return; // clic dentro de la hoja, no en el fondo
     var a = el.getAttribute('data-a'), v = el.getAttribute('data-v');
     if (a.charAt(0) === 'c' && a.charAt(1) === ':') { ev.preventDefault(); actC(a, v); }
     else if (/^[vfe]:/.test(a)) { ev.preventDefault(); act(a, v, el); }
