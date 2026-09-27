@@ -1,0 +1,5 @@
+.dbpass
+test/shots/
+test/shots_prod/
+test/uploads/
+__pycache__/
