@@ -19,7 +19,7 @@ async def shot(page, name): await page.screenshot(path=os.path.join(SHOTS, name 
 
 async def main():
     TOKEN = q("select token from tarjetas where codigo=%s", CARD)[0][0]
-    q("update tarjetas set estado='disponible', visita_actual=null where codigo=%s", CARD)
+    q("delete from comercio_movimientos; delete from comercio_sessions; delete from eventos; delete from visitas; delete from comercios; delete from contrato_pagos; delete from tarjetas where tipo='contrato'; delete from contratos; update tarjetas set estado='disponible', visita_actual=null")
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         phone = await browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, locale="es-PA")
@@ -92,7 +92,10 @@ async def main():
         await runner.fill("#codeBack", codigo); await runner.click('[data-a="e:entregar"]'); await runner.wait_for_selector(".toast")
         await adm.click('button[data-a="a:nav"][data-v="contratos"]'); await adm.wait_for_selector('[data-a="a:contratoCuenta"]'); await adm.click('[data-a="a:contratoCuenta"]')
         await adm.wait_for_selector(".overlay .kpi"); await shot(adm, "28-cuenta")
-        await adm.click('[data-a="a:contratoMarcarPago"]'); await adm.wait_for_selector("text=Pagado"); await adm.click('.overlay [data-a="d:cerrar"]')
+        await adm.click('[data-a="a:contratoMarcarPago"]'); await adm.wait_for_selector('.overlay .note.ok'); await adm.wait_for_timeout(1500)
+        for _ in range(3):
+            if not await adm.query_selector('.overlay'): break
+            await adm.click('.overlay [data-a="d:cerrar"]'); await adm.wait_for_timeout(500)
         # ---------- COMERCIOS ALIADOS ----------
         q("update tarjetas set estado='disponible', visita_actual=null where codigo='1020'")
         await adm.click('button[data-a="a:nav"][data-v="comercios"]'); await adm.wait_for_selector("#co_nombre")
