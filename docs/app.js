@@ -199,7 +199,7 @@
       h += '<div class="screen"><h1>Tarjeta lista</h1><p>Esta tarjeta no tiene ningún carro asignado en este momento. Entrégasela al valet al llegar y él la activará con tu carro.</p>'
         + '<div class="card sm"><div class="label">Cómo funciona</div><div class="list"><div class="li"><span class="num">1</span>Entrega tu carro y recibe esta tarjeta</div><div class="li"><span class="num">2</span>Escanea el QR cuando quieras tu carro</div><div class="li"><span class="num">3</span>Paga en el celular y lo llevamos a la puerta</div></div></div>'
         + (d.tipo_tarjeta === 'contrato' ? '' : tarifarioHtml(d.tarifario))
-        + '<div class="grow"></div><div class="small">' + esc((d.sitio && d.sitio.nombre) || '') + '</div></div>';
+        + '<div class="grow"></div><div class="small">' + esc((d.sitio && d.sitio.nombre) || '') + '</div><button class="tlink" data-a="c:terminos">Términos y condiciones</button></div>';
     } else if (s === 'ticket') {
       var n = (v.fotos || []).length;
       h += '<div class="screen"><h1>Tu carro está con nosotros</h1>'
@@ -209,7 +209,7 @@
         + '</div>'
         + precioVivo(v)
         + '<div class="grow"></div><div class="small">Conserva tu tarjeta con QR: la pediremos al entregarte el carro.</div>'
-        + '<button class="btn" data-a="c:pedir">Pedir mi carro</button></div>';
+        + '<button class="btn" data-a="c:pedir">Pedir mi carro</button><button class="tlink" data-a="c:terminos">Términos y condiciones</button></div>';
     } else if (s === 'pedir') {
       var opts = [['ahora', 'Ahora mismo', 'Ya voy saliendo'], ['5', 'En 5 minutos', 'Estoy pidiendo la cuenta'], ['10', 'En 10 minutos', 'Termino y salgo']];
       h += '<div class="screen"><button class="back" data-a="c:ticket">' + I.back + 'Volver</button><h1>¿Cuándo lo quieres?</h1><p>Lo tendremos en la puerta a tiempo. Traer tu carro toma unos minutos.</p><div style="display:flex;flex-direction:column;gap:10px">';
@@ -230,7 +230,7 @@
         [['yappy', 'Yappy', 'Lo confirmamos en el stand'], ['tarjeta', 'Tarjeta', 'Datáfono en el stand'], ['efectivo', 'Efectivo', 'Pagas al recibir el carro']].forEach(function (m) { var on = m[0] === C.method; h += '<button class="opt' + (on ? ' on' : '') + '" style="padding:13px 16px;border-radius:14px" data-a="c:method" data-v="' + m[0] + '"><span><span class="t" style="font-size:16px">' + m[1] + '</span><span class="s" style="font-size:12px">' + m[2] + '</span></span>' + (on ? I.check('#0A0A0A', 22) : '') + '</button>'; });
         h += '</div></div>';
       }
-      h += '<div class="grow"></div><button class="btn" data-a="c:pay"' + (C.sending ? ' disabled' : '') + '>' + (total === 0 ? 'Pedir mi carro' : (C.method === 'efectivo' ? 'Confirmar · pago en efectivo' : 'Pedir y pagar ' + money(total))) + '</button></div>';
+      h += '<div class="grow"></div><button class="btn" data-a="c:pay"' + (C.sending ? ' disabled' : '') + '>' + (total === 0 ? 'Pedir mi carro' : (C.method === 'efectivo' ? 'Confirmar · pago en efectivo' : 'Pedir y pagar ' + money(total))) + '</button><div class="small">Al pedir tu carro aceptas los <button class="tlink inline" data-a="c:terminos">términos y condiciones</button>.</div></div>';
     } else if (s === 'estado') {
       var fase = v.estado === 'en_camino' ? 1 : 0;
       var etaMin = v.cuando === '10' ? 10 : (v.cuando === '5' ? 5 : 4), rest = Math.max(1, etaMin - Math.floor(secsSince(v.solicitado_en) / 60));
@@ -249,7 +249,7 @@
       for (var k = 1; k <= 5; k++) h += '<button class="star" data-a="c:star" data-v="' + k + '" aria-label="' + k + ' estrellas">' + I.star(k <= (C.rating || u.calificacion || 0) ? '#0A0A0A' : '#D1D1D6') + '</button>';
       h += '</div><div class="card sm" style="gap:10px"><div class="row-between"><span class="label">Recibo</span><span style="font-size:12px;color:var(--muted)">' + esc(fecha(u.entregado_en)) + ' · ' + esc(hora(u.entregado_en)) + '</span></div><div style="font-size:14px;color:var(--muted)">' + esc(CFG.APP_NAME) + ' · Tarjeta ' + esc(d.tarjeta) + (u.placa ? ' · ' + esc(u.placa) : '') + '</div>'
         + (u.tipo === 'mensual' ? '<div class="kv"><span class="k">Contrato' + (u.tarifa > 0 ? ' · fuera de horario' : '') + '</span><b>' + money(u.tarifa) + '</b></div>' : '<div class="kv"><span class="k">Tarifa valet · ' + Math.floor((u.minutos || 0) / 60) + ' h ' + pad2((u.minutos || 0) % 60) + ' min</span><b>' + money(u.tarifa) + '</b></div>') + (u.extra > 0 ? '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(u.extra) + '</b></div>' : '') + '<div class="kv"><span class="k">Propina</span><b>' + money(u.propina) + '</b></div><div class="line"></div><div class="kv" style="font-size:16px"><b style="font-weight:800">Total · ' + esc(metodoNombre[u.pago_metodo] || '') + '</b><b style="font-weight:800">' + money(u.total) + '</b></div></div>'
-        + '<div class="grow"></div><div class="small">Gracias por usar ' + esc(CFG.APP_NAME) + '.</div></div>';
+        + '<div class="grow"></div><div class="small">Gracias por usar ' + esc(CFG.APP_NAME) + '.</div><button class="tlink" data-a="c:terminos">Términos y condiciones</button></div>';
     }
     app.innerHTML = '<div class="phone">' + h + '</div>';
   }
@@ -272,6 +272,7 @@
       case 'c:tip': C.tip = Number(v); break;
       case 'c:method': C.method = v; break;
       case 'c:tarifario': { var t = (C.data && C.data.tarifario) || null; document.body.insertAdjacentHTML('beforeend', '<div class="overlay" data-a="c:cerrarSheet"><div class="sheet"><div class="handle"></div>' + tarifarioHtml(t) + '<button class="btn2 md" data-a="c:cerrarSheet">Cerrar</button></div></div>'); return; }
+      case 'c:terminos': { document.body.insertAdjacentHTML('beforeend', '<div class="overlay" data-a="c:cerrarSheet"><div class="sheet"><div class="handle"></div><h1 class="sm">Términos y condiciones</h1>' + terminosHtml() + '<button class="btn2 md" data-a="c:cerrarSheet">Cerrar</button></div></div>'); return; }
       case 'c:cerrarSheet': { var o = document.querySelector('.overlay'); if (o) o.remove(); return; }
       case 'c:pay':
         if (C.sending) return; C.sending = true; renderC();
@@ -562,12 +563,22 @@
       + '<a class="btn" href="#/valet" style="text-decoration:none">App del valet</a>'
       + '<a class="btn2" href="#/tablero" style="text-decoration:none">Tablero del capitán</a>'
       + '<a class="btn2" href="#/admin" style="text-decoration:none">Administración</a></div>'
-      + '<div class="grow"></div><div class="small">Los clientes entran escaneando el QR de su tarjeta.</div></div></div>';
+      + '<div class="grow"></div><div class="small">Los clientes entran escaneando el QR de su tarjeta.</div><a class="tlink" href="#/terminos">Términos y condiciones</a></div></div>';
   }
+  function terminosHtml() {
+    return '<div class="terms"><div class="small" style="text-align:left">Última actualización: ' + esc(window.PE_TERMINOS_FECHA || '') + '</div>' + (window.PE_TERMINOS_HTML || '<p>No se pudieron cargar los términos.</p>') + '</div>';
+  }
+  function terminosPage() {
+    document.body.className = '';
+    app.innerHTML = '<div class="phone">' + header('Términos y condiciones') + '<div class="screen"><h1>Términos y condiciones del servicio</h1>' + terminosHtml() + '</div></div>';
+    window.scrollTo(0, 0);
+  }
+  window.PE.terminosHtml = terminosHtml;
   function route() {
     scanStop(); clearInterval(C.timer); clearInterval(V.timer); clearInterval(V.tick);
     if (window.PE_deskStop) window.PE_deskStop();
     var hsh = location.hash || '';
+    if (/^#\/terminos/.test(hsh)) { terminosPage(); return; }
     var m = hsh.match(/^#\/t\/([A-Za-z0-9]+)/) || (location.search.match(/[?&]t=([A-Za-z0-9]+)/));
     if (m) { document.body.className = ''; clienteStart(m[1]); return; }
     if (/^#\/valet/.test(hsh)) { document.body.className = ''; V._title = null; window.PE_onLogin = null; valetStart(); return; }
