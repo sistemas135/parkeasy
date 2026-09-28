@@ -14,7 +14,7 @@
   var mmss = function (s) { return Math.floor(s / 60) + ':' + pad2(s % 60); };
   var ubic = function (v) { return v && v.plaza ? pad2(v.plaza) + '-' + v.nivel : '—'; };
   var carro = function (v) { return [v.modelo, v.color].filter(Boolean).join(' · ') || 'Vehículo sin datos'; };
-  var metodoNombre = { efectivo: 'Efectivo', yappy: 'Yappy', tarjeta: 'Tarjeta', mensual: 'Mensual', cortesia: 'Cortesía' };
+  var metodoNombre = { efectivo: 'Efectivo', yappy: 'Yappy', tarjeta: 'Tarjeta', mensual: 'Mensual', cortesia: 'Cortesía', aliado: 'Comercio aliado' };
   var estadoNombre = { recibido: 'Recibido', estacionado: 'Estacionado', solicitado: 'Solicitado', en_camino: 'En camino', en_puerta: 'En la puerta', entregado: 'Entregado', cancelado: 'Cancelado' };
 
   var I = {
@@ -48,7 +48,7 @@
         var d = null; try { d = t ? JSON.parse(t) : null; } catch (e) { d = { message: t }; }
         if (!r.ok) {
           var msg = (d && d.message) || ('HTTP ' + r.status);
-          if (/SESION_INVALIDA/.test(msg)) { Sess.clear(); location.reload(); }
+          if (/SESION_INVALIDA/.test(msg)) { if (/^#\/aliado/.test(location.hash)) ASess.clear(); else Sess.clear(); location.reload(); }
           var err = new Error(msg); err.code = msg; throw err;
         }
         return d;
@@ -69,6 +69,11 @@
     clear: function () { try { localStorage.removeItem('pe_sess'); } catch (e) {} }
   };
   window.PE.Sess = Sess;
+  var ASess = {
+    get: function () { try { return JSON.parse(localStorage.getItem('pe_aliado') || 'null'); } catch (e) { return null; } },
+    set: function (s) { try { localStorage.setItem('pe_aliado', JSON.stringify(s)); } catch (e) {} },
+    clear: function () { try { localStorage.removeItem('pe_aliado'); } catch (e) {} }
+  };
 
   /* ---------------- imágenes ---------------- */
   function comprimir(file, max) {
@@ -172,10 +177,25 @@
       if (Number(c.precio) > 0) return '<div class="note warn" style="text-align:left;justify-content:space-between"><span>Fuera del horario del contrato' + (c.horario_hasta ? ' (desde ' + String(c.horario_hasta).slice(0, 5) + ')' : '') + '</span><b>' + money(c.precio) + '</b></div>';
       return '<div class="note ok">Contrato · sin cargo</div>';
     }
+    var cub = Number(v.cubierto || 0), dif = Math.max(0, Number(c.precio || 0) - cub);
+    if (v.comercio_id) {
+      var h2 = '<div class="note ok" style="text-align:left;justify-content:space-between"><span>Cortesía de ' + esc(v.comercio || 'tu restaurante') + '</span><b>' + money(cub) + '</b></div>';
+      if (dif > 0) h2 += '<div class="card sm" style="gap:6px"><div class="row-between"><span style="font-size:14px;color:var(--muted)">Tiempo adicional · ' + Math.floor((c.minutos || 0) / 60) + ' h ' + pad2((c.minutos || 0) % 60) + ' min</span><b style="font-size:20px;font-weight:800">' + money(dif) + '</b></div><div class="small" style="text-align:left">Tu restaurante cubrió ' + money(cub) + '; la tarifa actual es ' + money(c.precio) + '. Pagas solo la diferencia.</div>' + (v.extra > 0 ? '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(v.extra) + '</b></div>' : '') + '</div>';
+      else if (c.sube_en && c.sube_a != null) h2 += '<div class="small">Cubre hasta las ' + esc(hora(c.sube_en)) + '; después pagas solo la diferencia.</div>';
+      return h2;
+    }
     var h = '<div class="card sm" style="gap:6px"><div class="row-between"><span style="font-size:14px;color:var(--muted)">Tarifa actual · ' + Math.floor((c.minutos || 0) / 60) + ' h ' + pad2((c.minutos || 0) % 60) + ' min</span><b style="font-size:20px;font-weight:800">' + money(c.precio) + '</b></div>';
     if (c.sube_en && c.sube_a != null) h += '<div class="small" style="text-align:left">Sube a ' + money(c.sube_a) + ' a las ' + esc(hora(c.sube_en)) + '</div>';
     if (v.extra > 0) h += '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(v.extra) + '</b></div>';
     return h + '<button class="back" style="padding:4px 0" data-a="c:tarifario">Ver tarifario completo</button></div>';
+  }
+  // ¿la visita no tiene nada que cobrar al cliente (contrato o cortesía del comercio que cubre todo)?
+  function sinCargoCliente(v) {
+    var c = v.cotizacion || {};
+    if (v.extra > 0) return false;
+    if (v.tipo === 'mensual') return !(Number(c.precio) > 0);
+    if (v.comercio_id) return Math.max(0, Number(c.precio || 0) - Number(v.cubierto || 0)) === 0;
+    return false;
   }
   function clienteScreen() {
     var d = C.data; if (!d) return 'loading';
@@ -214,17 +234,17 @@
       var opts = [['ahora', 'Ahora mismo', 'Ya voy saliendo'], ['5', 'En 5 minutos', 'Estoy pidiendo la cuenta'], ['10', 'En 10 minutos', 'Termino y salgo']];
       h += '<div class="screen"><button class="back" data-a="c:ticket">' + I.back + 'Volver</button><h1>¿Cuándo lo quieres?</h1><p>Lo tendremos en la puerta a tiempo. Traer tu carro toma unos minutos.</p><div style="display:flex;flex-direction:column;gap:10px">';
       opts.forEach(function (o) { var on = o[0] === C.when; h += '<button class="opt' + (on ? ' on' : '') + '" data-a="c:when" data-v="' + o[0] + '"><span><span class="t">' + o[1] + '</span><span class="s">' + o[2] + '</span></span>' + (on ? I.check('#0A0A0A', 22) : '') + '</button>'; });
-      var sinCargo = v.tipo === 'mensual' && !(Number((v.cotizacion || {}).precio) > 0) && !(v.extra > 0);
-      h += '</div><div class="grow"></div>' + (sinCargo ? '<div class="note ok">Contrato · sin cargo</div><button class="btn" data-a="c:pay"' + (C.sending ? ' disabled' : '') + '>Pedir mi carro</button>' : '<button class="btn" data-a="c:pago">Continuar</button>') + '</div>';
+      var sinCargo = sinCargoCliente(v);
+      h += '</div><div class="grow"></div>' + (sinCargo ? '<div class="note ok">' + (v.comercio_id ? 'Cortesía de ' + esc(v.comercio || 'tu restaurante') + ' · sin cargo' : 'Contrato · sin cargo') + '</div><button class="btn" data-a="c:pay"' + (C.sending ? ' disabled' : '') + '>Pedir mi carro</button>' + (v.comercio_id ? '<button class="back" style="align-self:center" data-a="c:pago">Quiero dejar propina</button>' : '') : '<button class="btn" data-a="c:pago">Continuar</button>') + '</div>';
     } else if (s === 'pago') {
-      var cot = v.cotizacion || {}, base = Number(cot.precio != null ? cot.precio : v.tarifa) + Number(v.extra), total = base + C.tip, mensual = v.tipo !== 'abierto';
-      h += '<div class="screen"><button class="back" data-a="c:pedir">' + I.back + 'Volver</button><h1>' + (mensual ? 'Propina' : 'Pago') + '</h1>'
-        + '<div class="card sm">' + (mensual ? (Number(cot.precio) > 0 ? '<div class="kv"><span class="k">Fuera del horario del contrato · ' + Math.floor((cot.fuera_horario_min || 0) / 60) + ' h ' + pad2((cot.fuera_horario_min || 0) % 60) + ' min</span><b>' + money(cot.precio) + '</b></div>' : '<div class="kv"><span class="k">Servicio</span><b>Contrato · $0.00</b></div>') : '<div class="kv"><span class="k">Tarifa valet · ' + Math.floor((cot.minutos || 0) / 60) + ' h ' + pad2((cot.minutos || 0) % 60) + ' min</span><b>' + money(cot.precio != null ? cot.precio : v.tarifa) + '</b></div>') + (v.extra > 0 ? '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(v.extra) + '</b></div>' : '')
+      var cot = v.cotizacion || {}, cubierto = Number(v.cubierto || 0), precioAhora = Number(cot.precio != null ? cot.precio : v.tarifa), base = Math.max(0, precioAhora - cubierto) + Number(v.extra), total = base + C.tip, mensual = v.tipo !== 'abierto';
+      h += '<div class="screen"><button class="back" data-a="c:pedir">' + I.back + 'Volver</button><h1>' + (mensual || (v.comercio_id && base === 0) ? 'Propina' : 'Pago') + '</h1>'
+        + '<div class="card sm">' + (mensual ? (Number(cot.precio) > 0 ? '<div class="kv"><span class="k">Fuera del horario del contrato · ' + Math.floor((cot.fuera_horario_min || 0) / 60) + ' h ' + pad2((cot.fuera_horario_min || 0) % 60) + ' min</span><b>' + money(cot.precio) + '</b></div>' : '<div class="kv"><span class="k">Servicio</span><b>Contrato · $0.00</b></div>') : '<div class="kv"><span class="k">Tarifa valet · ' + Math.floor((cot.minutos || 0) / 60) + ' h ' + pad2((cot.minutos || 0) % 60) + ' min</span><b>' + money(precioAhora) + '</b></div>' + (v.comercio_id ? '<div class="kv"><span class="k">Cortesía de ' + esc(v.comercio || 'tu restaurante') + '</span><b>−' + money(Math.min(cubierto, precioAhora)) + '</b></div>' : '')) + (v.extra > 0 ? '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(v.extra) + '</b></div>' : '')
         + '<div class="kv"><span class="k">Propina para el equipo</span><b>' + money(C.tip) + '</b></div><div class="line"></div><div class="kv" style="font-size:17px"><b style="font-weight:800">Total</b><b style="font-weight:800">' + money(total) + '</b></div></div>'
         + '<div><div class="label" style="margin-bottom:8px">Propina · opcional</div><div class="chips">';
       [[0, 'Sin propina'], [1, '$1'], [2, '$2'], [3, '$3'], [5, '$5']].forEach(function (t) { h += '<button class="chip' + (t[0] === C.tip ? ' on' : '') + '" data-a="c:tip" data-v="' + t[0] + '">' + t[1] + '</button>'; });
       h += '</div></div>';
-      if (base > 0 && !mensual) h += '<div class="small">El precio queda fijo al pedir tu carro.</div>';
+      if (base > 0 && !mensual) h += '<div class="small">' + (v.comercio_id ? 'Pagas solo la diferencia sobre lo que cubrió tu restaurante.' : 'El precio queda fijo al pedir tu carro.') + '</div>';
       if (total > 0) {
         h += '<div><div class="label" style="margin-bottom:8px">Método de pago</div><div style="display:flex;flex-direction:column;gap:8px">';
         [['yappy', 'Yappy', 'Lo confirmamos en el stand'], ['tarjeta', 'Tarjeta', 'Datáfono en el stand'], ['efectivo', 'Efectivo', 'Pagas al recibir el carro']].forEach(function (m) { var on = m[0] === C.method; h += '<button class="opt' + (on ? ' on' : '') + '" style="padding:13px 16px;border-radius:14px" data-a="c:method" data-v="' + m[0] + '"><span><span class="t" style="font-size:16px">' + m[1] + '</span><span class="s" style="font-size:12px">' + m[2] + '</span></span>' + (on ? I.check('#0A0A0A', 22) : '') + '</button>'; });
@@ -248,7 +268,7 @@
       h += '<div class="screen" style="gap:18px"><h1 style="font-size:30px">¡Buen viaje!</h1><p>¿Cómo estuvo el servicio?</p><div class="stars">';
       for (var k = 1; k <= 5; k++) h += '<button class="star" data-a="c:star" data-v="' + k + '" aria-label="' + k + ' estrellas">' + I.star(k <= (C.rating || u.calificacion || 0) ? '#0A0A0A' : '#D1D1D6') + '</button>';
       h += '</div><div class="card sm" style="gap:10px"><div class="row-between"><span class="label">Recibo</span><span style="font-size:12px;color:var(--muted)">' + esc(fecha(u.entregado_en)) + ' · ' + esc(hora(u.entregado_en)) + '</span></div><div style="font-size:14px;color:var(--muted)">' + esc(CFG.APP_NAME) + ' · Tarjeta ' + esc(d.tarjeta) + (u.placa ? ' · ' + esc(u.placa) : '') + '</div>'
-        + (u.tipo === 'mensual' ? '<div class="kv"><span class="k">Contrato' + (u.tarifa > 0 ? ' · fuera de horario' : '') + '</span><b>' + money(u.tarifa) + '</b></div>' : '<div class="kv"><span class="k">Tarifa valet · ' + Math.floor((u.minutos || 0) / 60) + ' h ' + pad2((u.minutos || 0) % 60) + ' min</span><b>' + money(u.tarifa) + '</b></div>') + (u.extra > 0 ? '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(u.extra) + '</b></div>' : '') + '<div class="kv"><span class="k">Propina</span><b>' + money(u.propina) + '</b></div><div class="line"></div><div class="kv" style="font-size:16px"><b style="font-weight:800">Total · ' + esc(metodoNombre[u.pago_metodo] || '') + '</b><b style="font-weight:800">' + money(u.total) + '</b></div></div>'
+        + (u.tipo === 'mensual' ? '<div class="kv"><span class="k">Contrato' + (u.tarifa > 0 ? ' · fuera de horario' : '') + '</span><b>' + money(u.tarifa) + '</b></div>' : '<div class="kv"><span class="k">Tarifa valet · ' + Math.floor((u.minutos || 0) / 60) + ' h ' + pad2((u.minutos || 0) % 60) + ' min</span><b>' + money(Number(u.tarifa) + Number(u.cubierto || 0)) + '</b></div>' + (u.comercio_id ? '<div class="kv"><span class="k">Cortesía de ' + esc(u.comercio || 'tu restaurante') + '</span><b>−' + money(u.cubierto) + '</b></div>' : '')) + (u.extra > 0 ? '<div class="kv"><span class="k">Tarjeta perdida</span><b>' + money(u.extra) + '</b></div>' : '') + '<div class="kv"><span class="k">Propina</span><b>' + money(u.propina) + '</b></div><div class="line"></div><div class="kv" style="font-size:16px"><b style="font-weight:800">Total · ' + esc(metodoNombre[u.pago_metodo] || '') + '</b><b style="font-weight:800">' + money(u.total) + '</b></div></div>'
         + '<div class="grow"></div><div class="small">Gracias por usar ' + esc(CFG.APP_NAME) + '.</div><button class="tlink" data-a="c:terminos">Términos y condiciones</button></div>';
     }
     app.innerHTML = '<div class="phone">' + h + '</div>';
@@ -256,6 +276,7 @@
   function pagoRow(v) {
     var txt;
     if (v.tipo === 'mensual' && !(Number(v.total) > 0)) txt = 'Contrato · sin cargo';
+    else if (v.comercio_id && !(Number(v.total) > 0)) txt = 'Cortesía de ' + (v.comercio || 'tu restaurante') + ' · sin cargo';
     else if (v.pago_estado === 'pagado') txt = 'Pagado con ' + (metodoNombre[v.pago_metodo] || '') + ' · ' + money(v.total);
     else if (v.pago_metodo === 'efectivo') txt = 'Pagas ' + money(v.total) + ' en efectivo al recibir el carro';
     else if (v.pago_metodo === 'yappy') txt = 'Yappy · ' + money(v.total) + ' · muestra tu comprobante en el stand';
@@ -276,7 +297,7 @@
       case 'c:cerrarSheet': { var o = document.querySelector('.overlay'); if (o) o.remove(); return; }
       case 'c:pay':
         if (C.sending) return; C.sending = true; renderC();
-        var vis = C.data && C.data.visita, gratis = vis && vis.tipo === 'mensual' && !(Number((vis.cotizacion || {}).precio) > 0) && !(vis.extra > 0) && C.screen !== 'pago';
+        var vis = C.data && C.data.visita, gratis = vis && sinCargoCliente(vis) && C.screen !== 'pago';
         rpc('cliente_pedir', { p_token: C.token, p_cuando: C.when, p_propina: gratis ? 0 : C.tip, p_metodo: gratis ? null : C.method }).then(function (r) {
           C.sending = false; C.screen = 'auto';
           if (!r.ok) { toast(r.error === 'YA_SOLICITADO' ? 'Ya habías pedido tu carro' : 'No se pudo enviar', true); }
@@ -314,6 +335,7 @@
     return h;
   }
   function renderV() {
+    if (A.active) { renderAl(); return; }
     if (!V.sess) { app.innerHTML = '<div class="phone">' + pinScreen(V._title || 'App del valet') + '</div>'; return; }
     if (V.flow) { app.innerHTML = '<div class="phone">' + renderFlow() + '</div>'; afterRenderFlow(); return; }
     if (V.entrega) { app.innerHTML = '<div class="phone">' + renderEntrega() + '</div>'; afterRenderEntrega(); return; }
@@ -328,7 +350,7 @@
       if (!cola.length) h += '<div class="empty">No hay carros solicitados.<br>Cuando un cliente pida su carro aparece aquí.</div>';
       cola.forEach(function (v) {
         var s = secsSince(v.solicitado_en), late = v.estado === 'solicitado' && s > 240;
-        var pago = v.pago_estado === 'pagado' ? '<span class="tag ok">' + (v.tipo === 'mensual' && !(Number(v.total) > 0) ? 'Contrato · sin cargo' : 'Pagado' + (v.pago_metodo ? ' · ' + metodoNombre[v.pago_metodo] : '')) + '</span>' : (v.pago_metodo === 'efectivo' ? '<span class="tag warn">Cobrar ' + money(v.total) + ' efectivo</span>' : '<span class="tag bad">Pago ' + (metodoNombre[v.pago_metodo] || '') + ' por confirmar</span>');
+        var pago = v.pago_estado === 'pagado' ? '<span class="tag ok">' + (v.tipo === 'mensual' && !(Number(v.total) > 0) ? 'Contrato · sin cargo' : (v.comercio_id && !(Number(v.total) > 0) ? 'Cortesía · ' + esc(v.comercio || 'aliado') : 'Pagado' + (v.pago_metodo ? ' · ' + metodoNombre[v.pago_metodo] : ''))) + '</span>' : (v.pago_metodo === 'efectivo' ? '<span class="tag warn">Cobrar ' + money(v.total) + ' efectivo</span>' : '<span class="tag bad">Pago ' + (metodoNombre[v.pago_metodo] || '') + ' por confirmar</span>');
         var est = v.estado === 'en_puerta' ? '<span class="tag dark">En la puerta</span>' : (v.estado === 'en_camino' ? '<span class="tag blue">En camino' + (v.runner_entrega ? ' · ' + esc(v.runner_entrega) : '') + '</span>' : '<span class="tag">' + (v.cuando === 'ahora' || !v.cuando ? 'Ahora' : 'En ' + v.cuando + ' min') + '</span>');
         var btn = v.estado === 'solicitado' ? '<button class="take" data-a="v:tomar" data-v="' + v.id + '">Tomar</button>' : (v.estado === 'en_camino' ? '<button class="take" data-a="v:puerta" data-v="' + v.id + '">En la puerta</button>' : '<button class="take" data-a="v:entregar" data-v="' + v.id + '">Entregar</button>');
         h += '<div class="req' + (late ? ' alert' : '') + '" data-a="v:ver" data-v="' + v.id + '"><div class="info"><div class="row-between"><span class="code">' + esc(v.tarjeta) + ' · <span style="font-weight:700">' + esc(ubic(v)) + '</span></span><span class="timer' + (late ? ' late' : '') + '">' + mmss(s) + '</span></div><div class="sub">' + esc(carro(v)) + (v.placa ? ' · ' + esc(v.placa) : '') + '</div><div class="tags">' + est + pago + '</div></div>' + btn + '</div>';
@@ -468,6 +490,7 @@
     h += '<div class="screen"><div class="row-between"><h1 class="sm">Tarjeta ' + esc(v.tarjeta) + '</h1><span class="pill blue">' + esc(ubic(v)) + '</span></div>'
       + '<div class="card sm"><div class="row-between"><div><div style="font-size:16px;font-weight:800">' + esc(carro(v)) + '</div><div style="font-size:13px;color:var(--muted)">' + esc(estadoNombre[v.estado] || v.estado) + (v.solicitado_en ? ' · pedido ' + hora(v.solicitado_en) : '') + '</div></div>' + (v.placa ? '<span class="plate">' + esc(v.placa) + '</span>' : '') + '</div></div>';
     if (v.tipo === 'mensual' && pagado && !(Number(v.total) > 0)) h += '<div class="paybox ok">' + I.check('#fff', 18) + '<div class="txt"><b>Contrato</b><span>Sin cargo</span></div></div>';
+    else if (v.comercio_id && pagado && !(Number(v.total) > 0)) h += '<div class="paybox ok">' + I.check('#fff', 18) + '<div class="txt"><b>Cortesía · ' + esc(v.comercio || 'comercio aliado') + '</b><span>Sin cargo al cliente</span></div></div>';
     else if (pagado) h += '<div class="paybox ok">' + I.check('#fff', 18) + '<div class="txt"><b>Pagado · ' + esc(metodoNombre[v.pago_metodo] || '') + '</b><span>' + money(v.total) + (v.propina > 0 ? ' · incluye propina ' + money(v.propina) : '') + '</span></div></div>';
     else if (v.pago_metodo === 'efectivo') h += '<div class="paybox cash"><div class="txt"><b>Cobrar en efectivo</b><span>Total ' + money(v.total) + (v.propina > 0 ? ' (propina ' + money(v.propina) + ')' : '') + '</span></div><button class="mini" data-a="e:cobrar"' + (V.busy ? ' disabled' : '') + '>Recibí ' + money(v.total) + '</button></div>';
     else h += '<div class="paybox pend"><div class="txt"><b>' + esc(metodoNombre[v.pago_metodo] || 'Pago') + ' por confirmar · ' + money(v.total) + '</b><span>El capitán lo confirma en el tablero al ver el comprobante.</span></div><button class="mini bad" data-a="e:efectivo">Cambiar a efectivo</button></div>';
@@ -508,6 +531,7 @@
       case 'v:del': V.pin = V.pin.slice(0, -1); V.pinErr = false; renderV(); return;
       case 'v:enter':
         if (V.pin.length < 4) return;
+        if (A.active) { aliadoLogin(V.pin); return; }
         rpc('staff_login', { p_pin: V.pin }).then(function (r) {
           if (!r.ok) { V.pin = ''; V.pinErr = true; renderV(); return; }
           if (window.PE_onLogin) { window.PE_onLogin(r); return; }
@@ -556,13 +580,104 @@
   function nivelLocal(lb) { if (!lb) return null; if (lb + 200 <= 3000) return 'C'; if (lb + 200 <= 4500) return 'B'; if (lb <= 6000) return 'A'; return 'X'; }
 
   /* =====================================================================
+     COMERCIO ALIADO (restaurante que cubre el valet de sus clientes)
+     ===================================================================== */
+  var A = { active: false, sess: null, data: null, screen: 'home', code: '', err: '', res: null, busy: false, timer: null, manual: false };
+  var ALI_ERR = { TARJETA_NO_EXISTE: 'Esa tarjeta no existe.', SIN_CARRO: 'Esta tarjeta no tiene un carro en el valet ahora mismo.', YA_VALIDADA: 'Esta tarjeta ya fue validada.', CONTRATO: 'Este cliente tiene contrato mensual; no necesita validación.', YA_PAGADA: 'El cliente ya pagó su valet.', COMERCIO_SUSPENDIDO: 'Tu cuenta está suspendida. Comunícate con ParkEasy.' };
+  function aliadoStart() {
+    A.active = true; A.sess = ASess.get(); A.screen = 'home'; A.res = null; A.err = '';
+    V.pin = ''; V.pinErr = false;
+    renderAl();
+    if (A.sess) { aliadoLoad(); clearInterval(A.timer); A.timer = setInterval(function () { if (A.screen === 'home') aliadoLoad(); }, 15000); }
+  }
+  function aliadoLoad() {
+    if (!A.sess) return Promise.resolve();
+    return rpc('aliado_estado', { p_sess: A.sess.token }).then(function (d) { A.data = d; if (A.screen === 'home') renderAl(); }).catch(function () {});
+  }
+  function aliadoLogin(pin) {
+    rpc('aliado_login', { p_pin: pin }).then(function (r) {
+      if (!r.ok) { V.pin = ''; V.pinErr = true; renderAl(); return; }
+      A.sess = { token: r.token, nombre: r.nombre, id: r.id }; ASess.set(A.sess); V.pin = ''; aliadoStart();
+    }).catch(function () { toast('Sin conexión', true); });
+  }
+  function renderAl() {
+    if (!A.sess) { app.innerHTML = '<div class="phone">' + pinScreen('Comercios aliados') + '</div>'; return; }
+    var d = A.data, co = d && d.comercio, h = header(A.sess.nombre + ' · Aliado', '<button class="avatar" data-a="l:logout" title="Salir">Salir</button>');
+    if (A.screen === 'home') {
+      var saldo = co ? Number(co.saldo) : null, neg = saldo != null && saldo < 0;
+      h += '<div class="screen" style="gap:12px">';
+      h += '<div class="kpis"><div class="kpi dark"' + (neg ? ' style="background:var(--bad)"' : '') + '><div class="n" style="font-size:20px">' + (saldo == null ? '–' : money(saldo)) + '</div><div class="l">' + (neg ? 'Saldo · en negativo' : 'Saldo disponible') + '</div></div><div class="kpi"><div class="n">' + (d ? (d.hoy || []).length : '–') + '</div><div class="l">Validados hoy</div></div><div class="kpi"><div class="n">' + (d ? money(d.hoy_total) : '–') + '</div><div class="l">Cubierto hoy</div></div></div>';
+      if (co && co.estado !== 'activo') h += '<div class="note warn">Cuenta ' + esc(co.estado) + ' · no se pueden validar tarjetas.</div>';
+      else if (neg) h += '<div class="note warn">El excedente se cobra al cierre del mes junto con el prepago de ' + money(co.prepago) + '.</div>';
+      h += '<button class="btn xl" data-a="l:scan"' + (co && co.estado !== 'activo' ? ' disabled' : '') + '>' + I.qr(26) + 'Validar tarjeta de un cliente</button>';
+      h += '<div class="label">Hoy</div>';
+      if (!d) h += '<div class="empty"><div class="spin" style="margin:0 auto 10px"></div>Cargando…</div>';
+      else if (!(d.hoy || []).length) h += '<div class="empty">Aún no has validado tarjetas hoy.<br>Escanea el QR de la tarjeta del cliente para cubrir su valet.</div>';
+      else (d.hoy || []).forEach(function (x) { h += '<div class="req"><div class="info"><div class="row-between"><span class="code">Tarjeta ' + esc(x.tarjeta) + '</span><span class="timer">' + esc(hora(x.hora)) + '</span></div><div class="sub">' + esc([x.modelo, x.placa].filter(Boolean).join(' · ') || 'Vehículo') + ' · ' + esc(estadoNombre[x.estado] || x.estado) + '</div></div><b style="font-size:16px">' + money(x.monto) + '</b></div>'; });
+      if (d) h += '<div class="small">Este mes: ' + d.mes_carros + ' carro' + (d.mes_carros === 1 ? '' : 's') + ' · ' + money(d.mes_total) + '</div>';
+      h += '</div>';
+    } else if (A.screen === 'scan') {
+      h += '<div class="screen"><button class="back" data-a="l:home">' + I.back + 'Volver</button><h1 class="sm">Escanea la tarjeta</h1><p>Apunta al QR de la tarjeta de ParkEasy que tiene el cliente.</p>'
+        + (A.manual ? '' : '<div class="viewfinder"><video id="vidA" playsinline muted></video><div class="frame"></div><div class="cap">BUSCANDO QR…</div></div>')
+        + (A.err ? '<div class="err">' + esc(A.err) + '</div>' : '')
+        + '<div class="field"><div class="label">O escribe el número de la tarjeta</div><div class="row"><input class="input" id="codeAli" inputmode="numeric" pattern="[0-9]*" placeholder="Ej. 1042" value="' + esc(A.code) + '"><button class="btn sm" style="height:50px" data-a="l:code"' + (A.busy ? ' disabled' : '') + '>Buscar</button></div></div><div class="grow"></div></div>';
+    } else if (A.screen === 'confirm') {
+      var r = A.res, v = r.visita, c = r.cotizacion || {};
+      h += '<div class="screen"><button class="back" data-a="l:scan">' + I.back + 'Volver</button><div class="row-between"><h1 class="sm">Cubrir el valet</h1><span class="pill">TARJETA ' + esc(r.tarjeta) + '</span></div>'
+        + '<div class="card"><div class="row-between"><div><div style="font-size:17px;font-weight:800">' + esc(carro(v)) + '</div><div style="font-size:13px;color:var(--muted);margin-top:4px">Llegó ' + esc(hora(v.recibido_en)) + ' · ' + Math.floor((c.minutos || 0) / 60) + ' h ' + pad2((c.minutos || 0) % 60) + ' min</div></div>' + (v.placa ? '<span class="plate">' + esc(v.placa) + '</span>' : '') + '</div></div>'
+        + '<div class="card sm" style="gap:8px"><div class="kv" style="font-size:18px"><b style="font-weight:800">Cubres</b><b style="font-weight:800">' + money(r.monto) + '</b></div><div class="kv"><span class="k">Saldo después</span><b' + (Number(r.saldo_despues) < 0 ? ' style="color:var(--bad)"' : '') + '>' + money(r.saldo_despues) + '</b></div></div>'
+        + '<div class="small" style="text-align:left">Cubres la tarifa vigente en este momento' + (c.sube_en ? ' (sube a ' + money(c.sube_a) + ' a las ' + esc(hora(c.sube_en)) + ')' : '') + '. Si el cliente se queda más tiempo, él paga la diferencia.</div>'
+        + (A.err ? '<div class="err">' + esc(A.err) + '</div>' : '') + '<div class="grow"></div><button class="btn" data-a="l:validar"' + (A.busy ? ' disabled' : '') + '>Validar · ' + money(r.monto) + '</button></div>';
+    } else if (A.screen === 'done') {
+      var rr = A.res;
+      h += '<div class="screen" style="gap:18px"><div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:30px"><div class="big-check">' + I.check('#fff', 42) + '</div><h1 style="text-align:center">Validada · ' + money(rr.monto) + '</h1><p style="text-align:center">Tarjeta ' + esc(rr.tarjeta) + ' · ' + esc(carro(rr.visita)) + '<br>El cliente ya puede pedir su carro sin pagar.</p></div>'
+        + '<div class="kv" style="justify-content:center;gap:8px"><span class="k">Saldo</span><b' + (Number(rr.saldo) < 0 ? ' style="color:var(--bad)"' : '') + '>' + money(rr.saldo) + '</b></div>'
+        + '<div class="grow"></div><button class="btn" data-a="l:scan">Validar otra tarjeta</button><button class="btn2" data-a="l:home">Volver</button></div>';
+    }
+    app.innerHTML = '<div class="phone">' + h + '</div>';
+    if (A.screen === 'scan') {
+      if (!A.manual) {
+        var vid = document.getElementById('vidA');
+        scanStart(vid, function (raw) { var code = parseCard(raw); if (code) { scanStop(); aliadoConsultar(code); } })
+          .catch(function () { if (!A.active || A.screen !== 'scan') return; var ci = document.getElementById('codeAli'); if (ci) A.code = ci.value; A.manual = true; A.err = 'No hay acceso a la cámara. Escribe el número de la tarjeta.'; renderAl(); });
+      }
+      var inp = document.getElementById('codeAli'); if (inp) { inp.addEventListener('input', function () { A.code = inp.value; }); inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') actA('l:code'); }); }
+    } else scanStop();
+  }
+  function aliadoConsultar(code) {
+    A.busy = true; A.err = ''; A.code = code; renderAl();
+    rpc('aliado_consultar', { p_sess: A.sess.token, p_codigo: code }).then(function (r) {
+      A.busy = false;
+      if (!r.ok) { A.err = (ALI_ERR[r.error] || 'No se pudo consultar la tarjeta.') + (r.error === 'YA_VALIDADA' && r.comercio ? ' (' + r.comercio + ')' : ''); A.manual = true; renderAl(); return; }
+      A.res = r; A.screen = 'confirm'; renderAl();
+    }).catch(function () { A.busy = false; A.err = 'Sin conexión.'; A.manual = true; renderAl(); });
+  }
+  function actA(a) {
+    switch (a) {
+      case 'l:logout': if (!confirm('¿Cerrar sesión?')) return; rpc('aliado_logout', { p_sess: A.sess.token }).catch(function () {}); ASess.clear(); A.sess = null; A.data = null; clearInterval(A.timer); renderAl(); return;
+      case 'l:home': scanStop(); A.screen = 'home'; A.err = ''; A.res = null; renderAl(); aliadoLoad(); return;
+      case 'l:scan': A.screen = 'scan'; A.err = ''; A.code = ''; A.manual = false; A.res = null; renderAl(); return;
+      case 'l:code': { var inp = document.getElementById('codeAli'); var c = (inp && inp.value.trim()) || ''; if (!c) return; scanStop(); aliadoConsultar(c); return; }
+      case 'l:validar':
+        if (A.busy) return; A.busy = true; A.err = ''; renderAl();
+        rpc('aliado_validar', { p_sess: A.sess.token, p_codigo: A.res.tarjeta }).then(function (r) {
+          A.busy = false;
+          if (!r.ok) { A.err = ALI_ERR[r.error] || 'No se pudo validar.'; renderAl(); return; }
+          A.res = r; A.screen = 'done'; renderAl(); aliadoLoad();
+        }).catch(function () { A.busy = false; A.err = 'Sin conexión.'; renderAl(); });
+        return;
+    }
+  }
+
+  /* =====================================================================
      ROUTER
      ===================================================================== */
   function landing() {
     app.innerHTML = '<div class="phone">' + header('Sistema de valet') + '<div class="screen"><h1>ParkEasy</h1><p>Elige tu acceso.</p><div class="list">'
       + '<a class="btn" href="#/valet" style="text-decoration:none">App del valet</a>'
       + '<a class="btn2" href="#/tablero" style="text-decoration:none">Tablero del capitán</a>'
-      + '<a class="btn2" href="#/admin" style="text-decoration:none">Administración</a></div>'
+      + '<a class="btn2" href="#/admin" style="text-decoration:none">Administración</a>'
+      + '<a class="btn2" href="#/aliado" style="text-decoration:none">Comercios aliados</a></div>'
       + '<div class="grow"></div><div class="small">Los clientes entran escaneando el QR de su tarjeta.</div><a class="tlink" href="#/terminos">Términos y condiciones</a></div></div>';
   }
   function terminosHtml() {
@@ -575,12 +690,13 @@
   }
   window.PE.terminosHtml = terminosHtml;
   function route() {
-    scanStop(); clearInterval(C.timer); clearInterval(V.timer); clearInterval(V.tick);
+    scanStop(); clearInterval(C.timer); clearInterval(V.timer); clearInterval(V.tick); clearInterval(A.timer); A.active = false;
     if (window.PE_deskStop) window.PE_deskStop();
     var hsh = location.hash || '';
     if (/^#\/terminos/.test(hsh)) { terminosPage(); return; }
     var m = hsh.match(/^#\/t\/([A-Za-z0-9]+)/) || (location.search.match(/[?&]t=([A-Za-z0-9]+)/));
     if (m) { document.body.className = ''; clienteStart(m[1]); return; }
+    if (/^#\/aliado/.test(hsh)) { document.body.className = ''; window.PE_onLogin = null; aliadoStart(); return; }
     if (/^#\/valet/.test(hsh)) { document.body.className = ''; V._title = null; window.PE_onLogin = null; valetStart(); return; }
     if (/^#\/(tablero|admin)/.test(hsh)) { if (window.PE_desk) { window.PE_desk(hsh.indexOf('admin') > 0 ? 'admin' : 'tablero', pinScreenFor); } else app.innerHTML = '<div class="boot">Cargando…</div>'; return; }
     landing();
@@ -593,10 +709,11 @@
     if (el.classList.contains('overlay') && ev.target !== el) return; // clic dentro de la hoja, no en el fondo
     var a = el.getAttribute('data-a'), v = el.getAttribute('data-v');
     if (a.charAt(0) === 'c' && a.charAt(1) === ':') { ev.preventDefault(); actC(a, v); }
+    else if (/^l:/.test(a)) { ev.preventDefault(); actA(a); }
     else if (/^[vfe]:/.test(a)) { ev.preventDefault(); act(a, v, el); }
     else if (window.PE_deskAct) { ev.preventDefault(); window.PE_deskAct(a, v, el); }
   });
   window.addEventListener('hashchange', route);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) { if (C.token) clienteLoad(); if (V.sess) valetLoad(); } });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { if (C.token) clienteLoad(); if (V.sess && !A.active) valetLoad(); if (A.active && A.sess) aliadoLoad(); } });
   setTimeout(route, 0);
 })();

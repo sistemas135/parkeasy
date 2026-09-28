@@ -154,6 +154,42 @@ async def main():
         await adm.click('button[data-a="a:nav"][data-v="contratos"]'); await adm.wait_for_selector('[data-a="a:contratoCuenta"]'); await adm.click('[data-a="a:contratoCuenta"]')
         await adm.wait_for_selector(".overlay .kpi"); await shot(adm, "28-admin-cuenta")
         await adm.click('[data-a="a:contratoMarcarPago"]'); await adm.wait_for_selector("text=Pagado"); await adm.click('.overlay [data-a="d:cerrar"]')
+        # ---------- COMERCIOS ALIADOS ----------
+        subprocess.run(["psql", "-h", "/tmp", "-p", "5499", "-U", "postgres", "-d", "pe", "-q", "-c", "delete from comercio_movimientos; delete from comercio_sessions; update visitas set comercio_id=null; delete from comercios; update tarjetas set estado='disponible', visita_actual=null where codigo='1020'"])
+        await adm.click('button[data-a="a:nav"][data-v="comercios"]'); await adm.wait_for_selector("#co_nombre")
+        await adm.fill("#co_nombre", "Nación Sushi"); await adm.fill("#co_contacto", "Ana"); await adm.fill("#co_pin", "2468"); await adm.fill("#co_ref", "VISA 1234")
+        await adm.click('[data-a="a:nuevoComercio"]'); await adm.wait_for_selector("text=Nación Sushi"); await adm.wait_for_timeout(500); await shot(adm, "30-admin-comercios")
+        assert "$300.00" in (await adm.inner_text("table")), "saldo inicial no registrado"
+        # runner recibe 1020
+        await runner.click('[data-a="v:recibir"]'); await runner.wait_for_selector("#codeInput"); await runner.fill("#codeInput", "1020"); await runner.click('[data-a="f:code"]')
+        try: await runner.wait_for_selector(".fotos", timeout=15000)
+        except Exception: print("RUNNER PAGE:", await runner.inner_text("#app")); raise
+        await runner.set_input_files('input[data-foto="0"]', {"name": "a.jpg", "mimeType": "image/jpeg", "buffer": jpg()}); await runner.wait_for_function("document.querySelectorAll('.foto img').length >= 1")
+        await runner.click('[data-a="f:fotosOk"]'); await runner.wait_for_selector("#placa"); await runner.fill("#placa", "xy 5555"); await runner.fill("#q", "corolla"); await runner.wait_for_selector('button[data-a="f:pick"]'); await runner.click('button[data-a="f:pick"]')
+        await runner.click('[data-a="f:datosOk"]'); await runner.wait_for_selector('[data-a="f:estacionado"]'); await runner.click('[data-a="f:estacionado"]'); await runner.wait_for_selector("#selPlaza"); await runner.click('[data-a="f:ubicar"]'); await runner.wait_for_selector("text=Listo ·"); await runner.click('[data-a="v:cancelflow"]')
+        # app del aliado
+        al = await phone.new_page(); al.on("pageerror", lambda e: errors.append("aliado: " + str(e)))
+        await al.goto(BASE + "#/aliado"); await al.wait_for_selector(".keys"); await shot(al, "31-aliado-pin")
+        await pin(al, "9999"); await al.wait_for_selector("text=PIN incorrecto")
+        await pin(al, "2468"); await al.wait_for_selector('[data-a="l:scan"]'); await al.wait_for_selector("text=$300.00"); await shot(al, "32-aliado-home")
+        await al.click('[data-a="l:scan"]'); await al.wait_for_selector("#codeAli"); await al.fill("#codeAli", "1011"); await al.click('[data-a="l:code"]'); await al.wait_for_selector("text=no tiene un carro")
+        await al.fill("#codeAli", "1020"); await al.click('[data-a="l:code"]'); await al.wait_for_selector('[data-a="l:validar"]'); await shot(al, "33-aliado-confirmar")
+        assert "$5.00" in (await al.inner_text("#app")), "monto a cubrir no aparece"
+        await al.click('[data-a="l:validar"]'); await al.wait_for_selector("text=Validada ·"); await shot(al, "34-aliado-validada")
+        await al.click('[data-a="l:home"]'); await al.wait_for_selector("text=$295.00"); await al.wait_for_selector("text=Tarjeta 1020"); await shot(al, "35-aliado-home-2")
+        # el cliente ve la cortesía y pide sin pagar
+        t1020 = subprocess.check_output(["psql", "-h", "/tmp", "-p", "5499", "-U", "postgres", "-d", "pe", "-tA", "-c", "select token from tarjetas where codigo='1020'"]).decode().strip()
+        cc2 = await phone.new_page(); cc2.on("pageerror", lambda e: errors.append("cliente-aliado: " + str(e)))
+        await cc2.goto(BASE + "#/t/" + t1020); await cc2.wait_for_selector("text=Cortesía de Nación Sushi"); await shot(cc2, "36-cliente-cortesia")
+        await cc2.click('[data-a="c:pedir"]'); await cc2.wait_for_selector("text=sin cargo"); await cc2.click('[data-a="c:pay"]'); await cc2.wait_for_selector(".eta"); await cc2.wait_for_selector("text=Cortesía de Nación Sushi · sin cargo"); await shot(cc2, "37-cliente-cortesia-estado")
+        await runner.click('button[data-a="v:tab"][data-v="cola"]'); await runner.wait_for_selector("text=Cortesía · Nación Sushi")
+        await runner.click('button[data-a="v:tomar"]'); await runner.wait_for_selector('button[data-a="v:puerta"]'); await runner.click('button[data-a="v:puerta"]')
+        await runner.wait_for_selector('button[data-a="v:entregar"]'); await runner.click('button[data-a="v:entregar"]'); await runner.wait_for_selector("#codeBack"); await shot(runner, "38-runner-entrega-cortesia")
+        await runner.fill("#codeBack", "1020"); await runner.click('[data-a="e:entregar"]'); await runner.wait_for_selector(".toast")
+        await cc2.wait_for_selector(".stars", timeout=15000); assert "Cortesía de Nación Sushi" in (await cc2.inner_text("#app")); await shot(cc2, "39-cliente-recibo-cortesia")
+        # estado de cuenta y recarga
+        await adm.click('button[data-a="a:nav"][data-v="comercios"]'); await adm.wait_for_selector('[data-a="a:comercioCuenta"]'); await adm.click('[data-a="a:comercioCuenta"]')
+        await adm.wait_for_selector(".overlay .kpi"); txt = await adm.inner_text(".overlay"); assert "$295.00" in txt and "$300.00" in txt, txt; await shot(adm, "40-admin-cuenta-comercio"); await adm.click('.overlay [data-a="d:cerrar"]')
         # runner con rol no puede entrar al admin
         desk3 = await browser.new_context(viewport={"width": 1280, "height": 900}, locale="es-PA")
         r2 = await desk3.new_page(); await r2.goto(BASE + "#/admin"); await r2.wait_for_selector(".keys")
