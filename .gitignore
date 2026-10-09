@@ -3,3 +3,4 @@ test/shots/
 test/shots_prod/
 test/uploads/
 __pycache__/
+test/shots_demo/
