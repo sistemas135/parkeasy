@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#ffffff">
+<meta name="robots" content="noindex">
+<title>ParkEasy · DEMO</title>
+<link rel="icon" href="logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css?v=4">
+<style>
+  #demobar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:#FFF4D6;border-top:1px solid #F0D28A;font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:11px}
+  #demobar span{font-weight:800;letter-spacing:.06em;color:#8A6D1D;margin-right:4px}
+  #demobar button{border:1px solid #D9B65A;background:#fff;border-radius:999px;padding:6px 10px;font:inherit;font-weight:700;color:#0A0A0A}
+  #demobar button:active{background:#F7E7B5}
+  .app{padding-bottom:96px}
+  .toast{bottom:118px !important}
+</style>
+</head>
+<body>
+<div id="app" class="app"><div class="boot"><img src="logo.png" alt="ParkEasy" width="56" height="56"><div>Cargando demo…</div></div></div>
+<script src="demo-mock.js?v=1"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js" defer></script>
+<script src="terminos.js?v=3" defer></script>
+<script src="app.js?v=4" defer></script>
+</body>
+</html>
